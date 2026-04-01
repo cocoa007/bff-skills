@@ -107,6 +107,15 @@ All outputs are strict JSON to stdout.
 | Bitflow App API | Pool list with token contract IDs | `bff.bitflowapis.finance/api/app/v1/pools` |
 | Hiro Stacks API | Clarity contract source code | `api.hiro.so/v2/contracts/source/{addr}/{name}` |
 
+## Safety notes
+
+- **Read-only** — never submits transactions or moves funds
+- **No wallet required** — safe to call from any agent without authentication
+- **Mainnet-only** — Hiro API and Bitflow API are mainnet endpoints
+- **No secrets stored** — does not cache or persist contract source code
+- **Rate-limited** — respects Hiro API rate limits; scan command processes pools sequentially
+- **Known-safe allowlist** — sBTC and other verified tokens bypass analysis to avoid false positives
+
 ## Known constraints
 
 - Source analysis is static — it cannot detect runtime state (e.g., whether an admin key has been rotated)
