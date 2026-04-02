@@ -13,7 +13,18 @@ metadata:
 
 # HODLMM Bin Utilization Monitor
 
-Monitors capital utilization efficiency across HODLMM pools by analyzing how much deployed liquidity is actually within the active trading range. Identifies "dead capital" sitting in out-of-range bins, calculates effective TVL (capital that's earning fees), and scores overall capital efficiency to help LPs optimize their deployments.
+## What it does
+
+Monitors capital utilization efficiency across HODLMM pools by scanning on-chain bin reserves around the active trading bin. Measures what percentage of deployed liquidity is actively earning fees vs sitting idle in out-of-range bins. Calculates effective TVL, detects "dead capital," scores capital efficiency (0–100), and recommends HOLD/TIGHTEN/REBALANCE/URGENT actions.
+
+## Why agents need it
+
+HODLMM concentrated liquidity positions can drift out of range as prices move, leaving capital idle and earning zero fees. Agents need to detect this capital inefficiency to:
+
+- **Optimize LP returns** — know when to tighten or rebalance positions
+- **Compare pools** — find which pools have the most efficient capital deployment
+- **Avoid dead capital** — alert when a significant portion of TVL is far out of range
+- **Complement other skills** — `hodlmm-entry-optimizer` says *where* to deploy, this skill says *how efficiently* capital is currently deployed
 
 ## Commands
 
@@ -112,6 +123,31 @@ Weighted composite:
 - **Hiro API**: Read-only contract calls to `get-bin` for reserve data
 - **Bitflow App API**: Pool metadata, TVL, active bin ID, token prices
 - On-chain bin scanning from active bin outward
+
+## Output contract
+
+All commands output JSON to stdout with `tool: "hodlmm-bin-utilization"`.
+
+| Field | Type | Present |
+|-------|------|---------|
+| `tool` | `"hodlmm-bin-utilization"` | always |
+| `command` | `"doctor" \| "run" \| "scan" \| "install-packs"` | always |
+| `timestamp` | ISO 8601 string | always |
+| `error` | string | on failure only |
+| `pool` | object | `run` only |
+| `utilization` | object | `run` only |
+| `concentration` | object | `run` only |
+| `deadCapital` | object | `run` only |
+| `signal` | string | `run` only |
+| `topPools` | array | `scan` only |
+| `summary` | object | `scan` only |
+
+## Safety notes
+
+- **Read-only**: This skill makes no transactions and requires no wallet. All data comes from read-only contract calls and public APIs.
+- **Rate limiting**: Bin scanning is bounded by radius (default 10, scans radius*2 bins) with batched concurrent requests (5 at a time) to avoid overwhelming Hiro API.
+- **No financial advice**: Efficiency scores and recommendations are informational. They do not constitute investment advice.
+- **Stale data**: USD estimates use current token prices. Active bin may shift between scan start and end.
 
 ## Known Constraints
 
