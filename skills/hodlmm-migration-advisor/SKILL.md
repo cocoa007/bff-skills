@@ -1,34 +1,37 @@
 ---
 name: hodlmm-migration-advisor
-description: Cross-pool liquidity migration scanner for HODLMM concentrated LP positions — opportunity ranking, cost estimation, break-even analysis
-author: cocoa007
-tags: [hodlmm, migration, dlmm, bitflow, defi, lp, yield, optimization]
-entry: hodlmm-migration-advisor.ts
+description: "Cross-pool liquidity migration scanner for HODLMM concentrated LP positions — opportunity ranking, cost estimation, break-even analysis."
+metadata:
+  author: "cocoa007"
+  author-agent: "Fluid Briar"
+  user-invocable: "false"
+  arguments: "doctor | run | scan"
+  entry: "hodlmm-migration-advisor/hodlmm-migration-advisor.ts"
+  requires: "wallet"
+  tags: "defi, read, mainnet-only, hodlmm, migration"
 ---
 
 # HODLMM Liquidity Migration Advisor
 
 Scans all HODLMM pools to help LPs decide whether to stay in their current pool or migrate to a better opportunity. Compares fee efficiency, concentration quality, liquidity depth, and TVL across pools, then estimates migration costs and break-even timelines.
 
-## Commands
+## What it does
 
-### `doctor`
-Check API connectivity to Bitflow and Hiro endpoints.
+Fetches metadata for all HODLMM pools from the Bitflow App API, scores each pool by composite efficiency (fee yield, volume/TVL, concentration, depth), then compares the LP's current pool against alternatives. Estimates migration costs (exit slippage + entry slippage + gas) and computes break-even timelines to produce a STAY/MIGRATE/SPLIT/REDUCE recommendation.
 
-### `install-packs`
-No additional dependencies — uses workspace `commander` + native `fetch`.
+## Why agents need it
 
-### `run`
-Analyze migration opportunities from your current pool.
+An autonomous LP agent managing concentrated liquidity needs to periodically evaluate whether its capital is optimally deployed. This skill automates the cross-pool comparison that would otherwise require manual analysis of multiple data sources, delivering a structured recommendation that downstream decision-making can consume directly.
 
-**Options:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--pool <id>` | `sbtc-stx` | Current pool ID (numeric) or token pair name |
-| `--position <usd>` | `1000` | Position size in USD for cost estimates |
-| `--top <n>` | `5` | Number of top alternatives to show |
+## Safety notes
 
-**Output (JSON):**
+- Read-only — this skill never submits transactions or moves funds.
+- Mainnet only — pool IDs and contract addresses are mainnet-specific.
+- Migration cost is estimated, not a live quote — actual slippage may vary.
+- Volume data is 24h trailing — doesn't capture trends or mean-reversion.
+
+## Output contract
+
 ```json
 {
   "tool": "hodlmm-migration-advisor",
@@ -36,8 +39,7 @@ Analyze migration opportunities from your current pool.
   "positionUsd": 1000,
   "poolsAnalyzed": 8,
   "rankings": [
-    { "rank": 1, "pool": { "pair": "sBTC-STX", "compositeScore": 62 }, "vsCurrentBps": 0 },
-    { "rank": 2, "pool": { "pair": "WELSH-STX", "compositeScore": 55 }, "vsCurrentBps": -2.1 }
+    { "rank": 1, "pool": { "pair": "sBTC-STX", "compositeScore": 62 }, "vsCurrentBps": 0 }
   ],
   "recommendation": {
     "action": "STAY",
@@ -50,6 +52,21 @@ Analyze migration opportunities from your current pool.
   }
 }
 ```
+
+## Commands
+
+### `doctor`
+Check API connectivity to Bitflow and Hiro endpoints.
+
+### `run`
+Analyze migration opportunities from your current pool.
+
+**Options:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--pool <id>` | `sbtc-stx` | Current pool ID (numeric) or token pair name |
+| `--position <usd>` | `1000` | Position size in USD for cost estimates |
+| `--top <n>` | `5` | Number of top alternatives to show |
 
 ### `scan`
 Scan all HODLMM pools and rank by composite efficiency score.
@@ -79,14 +96,6 @@ Composite score (0–100) ranks pools by LP attractiveness:
 | **SPLIT** | Moderate improvement, 3-14 day break-even |
 | **REDUCE** | Current pool weak, no good alternatives |
 
-## Cost Estimation
-
-Migration cost includes:
-- **Exit slippage**: Based on position size vs current pool TVL
-- **Entry slippage**: Based on position size vs target pool TVL
-- **Gas**: ~0.5 STX for remove + add liquidity transactions
-- **Break-even**: Total cost / daily yield improvement
-
 ## Data Sources
 
 - **Bitflow App API**: Pool metadata, TVL, 24h volume, token prices
@@ -95,7 +104,6 @@ Migration cost includes:
 
 ## Known Constraints
 
-- Volume data is 24h trailing — doesn't capture trends or mean-reversion
 - On-chain bin sampling uses ±10 bins (not full range) for speed
 - Migration cost is estimated, not a live quote — actual slippage may vary
 - Single-snapshot analysis — rerun periodically for trend detection
