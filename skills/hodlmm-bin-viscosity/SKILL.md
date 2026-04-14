@@ -79,6 +79,13 @@ All outputs are JSON to stdout.
 - **viscosityClass**: "solid" (index > 80), "viscous" (60-80), "fluid" (40-60), "gaseous" (20-40), "vacuum" (< 20).
 - **viscosityIndex**: Composite health metric (0-100). Rewards high average viscosity, low shear stress, symmetric resistance, and smooth gradients.
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable viscosity metrics — flagged in output.
+- Flow resistance is theoretical — actual slippage depends on trade routing and AMM math.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
