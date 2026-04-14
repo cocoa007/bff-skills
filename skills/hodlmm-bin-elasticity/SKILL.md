@@ -82,6 +82,12 @@ All outputs are JSON to stdout.
 - **outlierBins**: Bins whose reserves deviate >3x or <0.33x from the fitted decay curve.
 - **elasticityScore**: Composite health metric (0-100). Rewards smooth decay, good fit, balanced sides, wide range, few outliers.
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
