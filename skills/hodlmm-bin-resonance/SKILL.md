@@ -80,6 +80,12 @@ All outputs are JSON to stdout.
 - **resonanceClass**: "harmonic" (high symmetry + clear harmonics), "quasi-harmonic" (partial patterns), "aperiodic" (no clear periodicity), "chaotic" (high entropy), "silent" (insufficient data).
 - **resonanceScore**: Composite health metric (0-100). Rewards symmetry, phase coherence, low entropy, constructive interference, and standing wave quality.
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
