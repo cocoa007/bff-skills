@@ -76,6 +76,12 @@ All outputs are JSON to stdout.
 - **Total variation distance**: Maximum pointwise difference between distributions (0 to 1).
 - **Hellinger distance**: Geometric mean-based divergence, bounded [0, 1].
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
