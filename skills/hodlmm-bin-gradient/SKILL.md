@@ -79,6 +79,12 @@ All outputs are JSON to stdout.
 - **Steepness score**: Composite of average and maximum normalized gradient magnitudes (0 = flat, 100 = extremely steep).
 - **Gradient score**: Overall health combining smoothness, symmetry, cliff count, and plateau presence (0-100).
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
