@@ -27,6 +27,12 @@ Full analysis for selected pools.
 ### status
 Quick summary for top pools.
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 - Read-only. No wallet required.
 - Scans bins within ±30 of the active bin.
