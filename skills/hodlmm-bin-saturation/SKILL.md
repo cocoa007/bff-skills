@@ -88,6 +88,12 @@ All outputs are JSON to stdout.
 - **gradientR2**: R² of linear fit. Higher = more systematic tilt.
 - **saturationScore**: Composite health metric (0-100) combining all above metrics.
 
+## Safety notes
+
+- **Read-only.** No transactions are submitted, no wallet or signing required.
+- **Mainnet-only.** Bitflow HODLMM API does not support testnet.
+- Pools with fewer than 5 populated bins produce unreliable metrics — flagged in output.
+
 ## Known constraints
 
 - Read-only. No wallet or signing required.
