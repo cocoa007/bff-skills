@@ -26,3 +26,42 @@ Vorticity reveals the rotational microstructure of liquidity that linear metrics
 ## Safety notes
 
 Read-only analysis. No transactions submitted. Only calls public Hiro and Bitflow APIs. No wallet access required. All data derived from on-chain state.
+
+## Commands
+
+### doctor
+Checks environment readiness — verifies Bun runtime, network connectivity to Hiro and Bitflow APIs.
+```bash
+bun run skills/hodlmm-bin-vorticity/hodlmm-bin-vorticity.ts doctor
+```
+
+### run
+Scans all HODLMM pools and computes vorticity metrics for each. Use `--pool <id>` to target a specific pool or `--top <n>` to limit results.
+```bash
+bun run skills/hodlmm-bin-vorticity/hodlmm-bin-vorticity.ts run --top 5
+```
+
+### status
+Alias for `run` — displays current vorticity analysis for active pools.
+```bash
+bun run skills/hodlmm-bin-vorticity/hodlmm-bin-vorticity.ts status
+```
+
+## Output contract
+
+All outputs are JSON to stdout.
+
+**Success:**
+```json
+{ "status": "success", "action": "bin-vorticity-scan", "data": { "poolsAnalyzed": 5, "pools": [] }, "error": null }
+```
+
+**Error:**
+```json
+{ "error": "descriptive message" }
+```
+
+## Known constraints
+- Requires network access to Hiro API and Bitflow API
+- Pools with fewer than 5 populated bins are skipped
+- Minimum TVL threshold: $1,000 USD
