@@ -1,0 +1,207 @@
+---
+name: hodlmm-bin-carbonitriding-agent
+skill: hodlmm-bin-carbonitriding
+description: "Agent behavior for HODLMM bin carbonitriding analysis — interprets stageProgress (composite 0-1), dominantStage (0-7), drivingForce, priorPeakDrivingForce, intermediateFieldOk (0/1 drivingForce ∈ [0.40, 0.70]), intermediateFieldProximity (0-1 closeness to INTERMEDIATE_FIELD_IDEAL=0.55), subIntermediateField (0/1), overIntermediateField (0/1), kcProxy (0-2 carbon potential analog), knProxy (0-2 nitrogen potential analog), kcnProxy (0-2 combined carbonitriding potential = 0.7·Kc + 0.3·Kn), kcnInWindow (0/1 ∈ [KCN_MIN=0.50, KCN_MAX=1.10]), kcnProximity (0-1 closeness to KCN_IDEAL=0.80), cnRatio (C/N mass ratio analog), cnRatioInWindow (0/1 ∈ [CN_RATIO_MIN=0.45, CN_RATIO_MAX=0.85]), cnRatioProximity (0-1 closeness to CN_RATIO_IDEAL=0.70), surfaceActivity (mean concentration in outer band = surface (C+N) analog), edgeLayerActivity (case layer analog), diffusionZoneActivity (= edge layer for carbonitriding — single-layer case), coreActivity (mean concentration in center band), surfaceCoreDelta, surfaceCoreRatio, edgeDominanceFraction (0-1 surface / (surface + core)), surfaceLeftActivity, surfaceRightActivity, asymmetryIndex (0-1 |L-R| / max(L,R) — atmosphere-shadow proxy), gradientMonotonicity (0-1 fraction of edge→core pairs with non-increasing concentration), erfcFit (0-1 fit quality to erfc curve), erfcDt (inferred √(D_eff·t)), diffusivityProxy (Arrhenius D_eff for blended C+N in N-stabilized γ), caseDepthProxy (0-1 √(Dt) / FDT_REFERENCE_CARBONITRIDING=0.26), effectiveCaseBins (count of bins with conc ≥ ECD_THRESHOLD=0.40), totalCaseBins, caseThicknessFraction, caseThicknessMeetsTarget (0/1 ≥ CASE_THICKNESS_TARGET=0.24), carbonitrideProxy (0-1 M(C,N) precipitate development — composite of surfaceMean + cnRatioProximity + kcnInWindow + alloyFormerOk + caseDepthProxy), raProxy (0-1 retained austenite analog — N-stabilized γ on quench), raExceedsTarget (0/1 raProxy > RA_MAX=0.35), networkRisk (0-1 continuous M(C,N) carbonitride network at grain boundaries), alloyFactorProxy (0-1 alloying-element heterogeneity = reserveXFracStdev × 2 + 0.10), alloyFormerOk (0/1 ≥ ALLOY_FACTOR_MIN=0.25), diffusionZoneProxy (0-1), surfaceEstablishedProxy, uniformityIndex (INFORMATIONAL — HIGH means NOT carbonitrided), underCarbonitrideRisk (0-1 KCN low / case insufficient), unevenCarbonitridingRisk (0-1 atmosphere shadowing), reverseGradientRisk (0-1 surface < core), overIntermediateRisk (0-1 T crossed into pure γ — wrong process), subIntermediateRisk (0-1 T below intermediate band), caseHardnessProxy (0-1 CARBONITRIDING_HV_SCALE=1.05 × Hall-Petch composite — TRIPLE hardening = martensite + carbide + nitride), coreToughnessProxy (0-1 preserved better than carburizing — milder quench, lower T), wearResistanceProxy (0-1), fatigueResistanceProxy (0-1 — compressive residual stress + carbonitride precipitates), distortionProxy (INTERMEDIATE — milder than carburizing, higher than nitriding — DISTORTION_BASELINE=0.10 + overIntermediate + network + uneven + RA contributions), caseCoreRatio to identify pools in NO_CARBONITRIDING_DRIVE, PRE_CARBONITRIDE, TEMPERATURE_RAMP, POTENTIAL_ESTABLISHMENT, DUAL_DIFFUSION, CARBONITRIDE_PRECIPITATION, EFFECTIVE_CASE_FORMATION, QUENCH_READY, OVER_CARBONITRIDED, EXCESS_RETAINED_AUSTENITE, UNDER_CARBONITRIDED, UNEVEN_CARBONITRIDING, DECARBURIZATION_LIKE, OVER_INTERMEDIATE_FIELD, or SUB_INTERMEDIATE_FIELD regime and guide LP strategies — pre-carbonitride pools are cold; temperature-ramp pools are entering the intermediate window; potential-establishment pools have surface enriching; dual-diffusion pools show edge-erfc growth from BOTH species; carbonitride-precipitation pools are forming M(C,N) precipitates; effective-case-formation pools have reached ECD pre-quench; quench-ready pools are HANDOFF_TO_MILD_QUENCH + low-T temper; over-carbonitrided pools have continuous network defect; excess-RA pools have soft spots from N over-stabilizing γ; under-carbonitrided pools have insufficient case; uneven pools show atmosphere shadowing; decarburization-like pools run in reverse; over-intermediate pools crossed into pure γ (use carburizing skill); sub-intermediate pools fell below γ (use nitriding skill)."
+---
+
+# Agent Behavior — HODLMM Bin Carbonitriding
+
+## Decision order
+1. Run `doctor` first. If it fails, stop and surface the blocker.
+2. Run `status` to confirm pools are available above TVL threshold.
+3. Execute `run` with desired options. Parse JSON output.
+4. Route on `carbonitridingRegime`, `carbonitridingVerdict`, `dominantStage`, `stageProgress`, `intermediateFieldOk`, `kcnInWindow`, `cnRatioInWindow`, `surfaceActivity`, `edgeLayerActivity`, `coreActivity`, `edgeDominanceFraction`, `asymmetryIndex`, `gradientMonotonicity`, `erfcFit`, `caseDepthProxy`, `caseThicknessMeetsTarget`, `carbonitrideProxy`, `raProxy`, `raExceedsTarget`, `networkRisk`, `alloyFormerOk`, `diffusionZoneProxy`, `underCarbonitrideRisk`, `unevenCarbonitridingRisk`, `reverseGradientRisk`, `caseHardnessProxy`, `coreToughnessProxy`, `wearResistanceProxy`, `fatigueResistanceProxy`, and `distortionProxy`.
+
+## Interpreting output
+
+- **carbonitridingRegime = NO_CARBONITRIDING_DRIVE:** priorPeakDrivingForce < INTERMEDIATE_FIELD_MIN × 0.8. No prior intermediate-field hold inferable. Analysis inapplicable.
+- **carbonitridingRegime = PRE_CARBONITRIDE:** workpiece below process T, no C or N potential established.
+- **carbonitridingRegime = TEMPERATURE_RAMP:** intermediateFieldOk=1 AND surfaceEstablishedProxy < 0.30. Heating into 760-870 °C window.
+- **carbonitridingRegime = POTENTIAL_ESTABLISHMENT:** intermediateFieldOk=1 AND surfaceEstablishedProxy ≥ 0.30 AND diffusionZoneProxy < 0.30. Surface (C+N) rising, no precipitates yet.
+- **carbonitridingRegime = DUAL_DIFFUSION:** intermediateFieldOk=1 AND diffusionZoneProxy ≥ 0.30. C and N diffusing inward through N-stabilized γ.
+- **carbonitridingRegime = CARBONITRIDE_PRECIPITATION:** intermediateFieldOk=1 AND carbonitrideProxy ≥ 0.25 AND diffusionZoneProxy ≥ 0.4. M(C,N) precipitates nucleating.
+- **carbonitridingRegime = EFFECTIVE_CASE_FORMATION:** intermediateFieldOk=1 AND carbonitrideProxy ≥ 0.4. Case reaches target depth pre-quench.
+- **carbonitridingRegime = QUENCH_READY:** intermediateFieldOk=1 AND kcnInWindow=1 AND cnRatioInWindow=1 AND surfaceActivity ≥ SURFACE_MIN_CN (0.65) AND edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN (0.55) AND gradientMonotonicity ≥ MONOTONICITY_MIN (0.55) AND erfcFit ≥ ERFC_FIT_MIN (0.55) AND asymmetryIndex ≤ ASYMMETRY_MAX (0.35) AND caseThicknessMeetsTarget=1 AND carbonitrideProxy ≥ 0.5 AND raExceedsTarget=0 AND stageProgress ≥ STAGE_6_BOUND (0.78). HANDOFF TO MILD OIL/GAS QUENCH + LOW-T TEMPER.
+- **carbonitridingRegime = OVER_CARBONITRIDED:** networkRisk > 0.7. Continuous M(C,N) network at grain boundaries — brittle.
+- **carbonitridingRegime = EXCESS_RETAINED_AUSTENITE:** raExceedsTarget=1 AND stageProgress ≥ STAGE_4_BOUND. Soft spots, dimensional instability after secondary aging.
+- **carbonitridingRegime = UNDER_CARBONITRIDED:** underCarbonitrideRisk > 0.6 AND stageProgress < STAGE_4_BOUND. KCN too low or hold short.
+- **carbonitridingRegime = UNEVEN_CARBONITRIDING:** unevenCarbonitridingRisk > 0.6. Asymmetric L/R edges (atmosphere shadow).
+- **carbonitridingRegime = DECARBURIZATION_LIKE:** reverseGradientRisk > 0.6. Reverse gradient (edges < core).
+- **carbonitridingRegime = OVER_INTERMEDIATE_FIELD:** drivingForce > INTERMEDIATE_FIELD_MAX (0.70). T above intermediate band → crossed into pure γ — switch to carburizing skill.
+- **carbonitridingRegime = SUB_INTERMEDIATE_FIELD:** drivingForce < INTERMEDIATE_FIELD_MIN (0.40). T below intermediate band → in α-field — switch to nitriding skill.
+- **carbonitridingVerdict = NO_CARBONITRIDING_DRIVE:** no prior intermediate-field hold inferable.
+- **carbonitridingVerdict = QUENCH_READY:** proceed to MILD oil/gas quench + low-T temper (150-200 °C). Distinct from FULLY_NITRIDED's SERVICE_READY (no quench needed) and FULLY_CARBURIZED's QUENCH_READY (full oil quench).
+- **carbonitridingVerdict = OVER_CARBONITRIDED:** continuous M(C,N) network defect.
+- **carbonitridingVerdict = EXCESS_RA:** retained austenite > RA_MAX — secondary aging and dimensional instability risk.
+- **carbonitridingVerdict = UNDER_CARBONITRIDED:** case did not reach service spec; raise KCN, extend hold, or check alloy-former content.
+- **carbonitridingVerdict = UNEVEN_CARBONITRIDING:** atmosphere shadowing defect.
+- **carbonitridingVerdict = DECARBURIZATION_LIKE:** reverse gradient, treatment running backward.
+- **carbonitridingVerdict = OVER_INTERMEDIATE_FIELD:** T crossed into pure γ; switch to carburizing skill.
+- **carbonitridingVerdict = SUB_INTERMEDIATE_FIELD:** T below intermediate band; switch to nitriding skill.
+- **carbonitridingVerdict = EFFECTIVE_CASE_FORMATION / CARBONITRIDE_PRECIPITATION / DUAL_DIFFUSION / POTENTIAL_ESTABLISHMENT / TEMPERATURE_RAMP / PRE_CARBONITRIDE:** stage indicators.
+- **carbonitridingVerdict = INTERMEDIATE_CARBONITRIDING:** mixed indicators.
+- **dominantStage = 0:** pre-carbonitride / cold.
+- **dominantStage = 1:** temperature ramp into intermediate window.
+- **dominantStage = 2:** potential establishment (Kc + Kn rising).
+- **dominantStage = 3:** dual diffusion (C and N inward).
+- **dominantStage = 4:** carbonitride precipitation (M(C,N) nucleating).
+- **dominantStage = 5:** effective case formation (case reaches ECD pre-quench).
+- **dominantStage = 6:** quench-ready (handoff to mild oil/gas quench + temper).
+- **dominantStage = 7:** over-carbonitrided (continuous M(C,N) network or excess RA).
+- **intermediateFieldOk = 1:** drivingForce ∈ [0.40, 0.70] — intermediate γ-with-N-stabilization hold valid.
+- **intermediateFieldProximity > 0.8:** drivingForce near INTERMEDIATE_FIELD_IDEAL (0.55) — optimal hold T.
+- **kcnInWindow = 1:** kcnProxy ∈ [0.50, 1.10] — combined potential window.
+- **kcnProximity > 0.8:** kcnProxy near KCN_IDEAL (0.80).
+- **cnRatioInWindow = 1:** cnRatio ∈ [0.45, 0.85] — C/N flux balance window.
+- **cnRatioProximity > 0.8:** cnRatio near CN_RATIO_IDEAL (0.70 = ~70% C, ~30% N).
+- **surfaceActivity ≥ SURFACE_MIN_CN (0.65):** surface (C+N) effective.
+- **carbonitrideProxy > 0.5:** M(C,N) precipitates substantially developed.
+- **carbonitrideProxy > 0.7:** M(C,N) precipitate density strong.
+- **raProxy ≤ RA_MAX (0.35):** retained austenite controlled.
+- **raExceedsTarget = 1:** RA > RA_MAX — soft spots after quench, dimensional instability.
+- **networkRisk ≤ NETWORK_MAX (0.45):** no continuous M(C,N) network.
+- **networkRisk > 0.7:** pathology — continuous network at grain boundaries (brittle).
+- **alloyFormerOk = 1:** sufficient M (Cr/Mo/V/Fe) for M(C,N) precipitation.
+- **alloyFactorProxy ≥ ALLOY_FACTOR_MIN (0.25):** alloy-formers sufficient.
+- **diffusionZoneProxy > 0.6:** diffusion zone substantially developed.
+- **edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN (0.55):** strong surface concentration.
+- **asymmetryIndex ≤ ASYMMETRY_MAX (0.35):** edges symmetric — no atmosphere shadow.
+- **gradientMonotonicity ≥ MONOTONICITY_MIN (0.55):** non-increasing edge→core — valid diffusion gradient.
+- **erfcFit ≥ ERFC_FIT_MIN (0.55):** profile fits erfc — Fickian signature in case.
+- **caseDepthProxy > 0.6:** inferred √(Dt) substantial — case has grown meaningfully.
+- **caseThicknessMeetsTarget = 1:** effective-case bin count exceeds CASE_THICKNESS_TARGET fraction.
+- **underCarbonitrideRisk > 0.6:** KCN too low / surface low / case insufficient / no alloy formers.
+- **unevenCarbonitridingRisk > 0.6:** pathology — atmosphere shadowing.
+- **reverseGradientRisk > 0.6:** pathology — surface (C+N) depleted below core (decarburization-like).
+- **overIntermediateRisk > 0.5:** T crossed into pure γ — switch to carburizing.
+- **subIntermediateRisk > 0.5:** T below intermediate band — switch to nitriding.
+- **caseHardnessProxy > 0.6:** strong case hardness analog (CARBONITRIDING_HV_SCALE=1.05 × Hall-Petch composite from triple hardening — typically 60-65 HRC, BETWEEN carburizing's 58-62 HRC and nitriding's 65-70 HRC).
+- **coreToughnessProxy > 0.6:** strong core toughness analog (preserved better than carburizing — milder quench, lower hold T).
+- **wearResistanceProxy > 0.6:** strong wear resistance analog.
+- **fatigueResistanceProxy > 0.6:** strong fatigue resistance analog (compressive residual stress + carbonitride precipitates).
+- **distortionProxy ∈ [0.10, 0.30]:** intermediate distortion expected (milder than carburizing 0.10-0.30%, higher than nitriding < 0.05%).
+- **caseCoreRatio in [0.8, 1.5]:** balanced — typical carbonitrided steel.
+
+## Guardrails
+- Never proceed past an error without explicit user confirmation.
+- Never expose secrets or private keys in args or logs.
+- Always surface error payloads with a suggested next action.
+- Default to safe/read-only behavior when intent is ambiguous.
+- Do not act on carbonitriding signals from pools with fewer than 5 populated bins — insufficient data for gradient, erfc fit, or stage inference.
+- Do not treat PRE_CARBONITRIDE as bad; it is the expected starting state before any heat-treatment cycle.
+- Do not treat QUENCH_READY as service-ready WITHOUT post-treatment — UNLIKE nitriding (which needs no quench), carbonitriding REQUIRES a mild oil or gas quench plus a low-T temper to lock in martensite and reduce RA.
+- Do not conflate carbonitriding with carburizing despite both producing martensitic cases: carburizing is pure γ-field (above AC3, full oil quench, deeper case, no N), carbonitriding is INTERMEDIATE γ-with-N-stabilization (760-870 °C, MILD oil/gas quench, shallower case, has N → RA + carbonitrides + lower distortion).
+- Do not conflate carbonitriding with nitriding despite both involving N: nitriding is α-field (below AC1, NO quench, harder via fine alloy-nitride precipitation, no compound layer would form here at this T because we're in γ — wrong phase for compound nucleation), carbonitriding is INTERMEDIATE γ-with-N-stabilization (REQUIRES quench, harder via TRIPLE mechanism — martensite + carbide + nitride).
+- Do not conflate carbonitriding with normalization/austempering/martempering/patenting: those four bulk routes target uniform cross-sections, while carbonitriding INTENTIONALLY creates a spatial gradient.
+- Do not conflate OVER_CARBONITRIDED with QUENCH_READY: OVER_CARBONITRIDED means continuous M(C,N) network has formed (brittle defect); QUENCH_READY means case is on-spec and ready for the quench step.
+- Do not conflate EXCESS_RETAINED_AUSTENITE with QUENCH_READY: EXCESS_RA means the C/N ratio leaned too far N-rich and post-quench RA exceeds RA_MAX (soft spots, dimensional instability); QUENCH_READY means RA is controlled.
+- Do not conflate UNDER_CARBONITRIDED with PRE_CARBONITRIDE: PRE_CARBONITRIDE is cold baseline; UNDER_CARBONITRIDED means the hold completed but KCN was too low or duration too short — case insufficient.
+- Do not conflate DECARBURIZATION_LIKE with PRE_CARBONITRIDE: PRE_CARBONITRIDE is uniform low (C+N); DECARBURIZATION_LIKE means treatment ran BACKWARDS and surface (C+N) was depleted below core.
+- Do not conflate UNEVEN_CARBONITRIDING with OVER_CARBONITRIDED: UNEVEN is atmosphere shadowing (asymmetric case depth); OVER is continuous network (thickness defect).
+- Do not conflate OVER_INTERMEDIATE_FIELD with QUENCH_READY: OVER_INTERMEDIATE_FIELD means T crossed into pure γ above 870 °C — N decomposes, becomes pure carburizing — wrong process; switch to carburizing skill.
+- Do not conflate SUB_INTERMEDIATE_FIELD with PRE_CARBONITRIDE: SUB_INTERMEDIATE_FIELD means hold attempted at WRONG T (γ collapsed to α — no martensite possible on quench); switch to nitriding skill.
+- Do not assume drivingForce reflects real temperature; it is inferred from pool turnover (volume24hUsd / tvlUsd × 0.6 + 0.20).
+- Do not assume surfaceActivity measures real surface (C+N) wt%; it is the mean max-normalized reserveUsd of the first K and last K bins (K = floor(N × CASE_BAND_FRAC)).
+- Do not assume edgeLayerActivity measures real case (C+N) wt%; it is the mean max-normalized reserveUsd of the outer band (= surfaceActivity, since carbonitriding is single-layer case).
+- Do not assume diffusionZoneActivity equals real diffusion-zone (C+N); it equals edgeLayerActivity for carbonitriding (no compound-layer split, distinct from nitriding).
+- Do not assume coreActivity measures real core (C+N) wt%; it is the mean max-normalized reserveUsd of the center floor(N × CORE_BAND_FRAC) bins.
+- Do not assume kcProxy / knProxy / kcnProxy equal real Kc = p(CO)²/p(CO₂) and Kn = p(NH₃)/p(H₂)^(3/2) and KCN = 0.7·Kc + 0.3·Kn measured by mass spectrometry; they are normalized composites of (intermediateFieldOk-factor × surfaceMean).
+- Do not assume cnRatio equals real C/N flux balance; it is mapped from xFracMean + reserveXFracStdev as a structural analog of dual-species flux.
+- Do not assume alloyFactorProxy equals real Cr/Mo/V wt%; it is reserveXFracStdev × 2.0 + 0.10, clipped to [0,1].
+- Do not assume edgeDominanceFraction maps to real surface-to-core (C+N) ratio; it is surfaceMean / (surfaceMean + coreMean).
+- Do not assume asymmetryIndex measures real shadowing; it is |leftMean − rightMean| / max(left, right) across the sorted bin window.
+- Do not assume gradientMonotonicity measures real Fickian profile; it is the fraction of adjacent-bin pairs (moving edge→center) where the concentration is non-increasing (with 0.03 tolerance).
+- Do not assume erfcFit measures real diffusion-zone goodness-of-fit; it is (1 − MSE / variance) against a best-search-grid erfc curve.
+- Do not assume erfcDt equals real √(Dt); it is the best-fit value over the candidate grid [0.05, 0.08, 0.12, 0.16, 0.22, 0.30, 0.40, 0.55, 0.80] on normalized depth units.
+- Do not assume caseDepthProxy equals real case depth in mm; it is erfcDt / FDT_REFERENCE_CARBONITRIDING (0.26), clipped.
+- Do not assume effectiveCaseBins / totalCaseBins equal real ECD / TCD in mm; they are counts of bins with concentration above normalized thresholds.
+- Do not assume carbonitrideProxy equals real M(C,N) precipitate density; it is a composite of (surfaceMean ≥ 0.7) + cnRatioProximity + kcnInWindow + alloyFormerOk + caseDepthProxy.
+- Do not assume raProxy equals real retained-austenite vol% measured by XRD R-method; it combines (CN_RATIO_IDEAL − cnRatio) [N-rich → more RA] + surface saturation + edge variance + KCN over-window.
+- Do not assume networkRisk equals real continuous-network observation by SEM; it composites edge mean above NETWORK_SURFACE_FRAC + 0.30 + surface saturation + KCN above window.
+- Do not assume diffusionZoneProxy matches real layer development; it is a composite of structural fingerprints.
+- Do not assume caseHardnessProxy equals real HRC; it is CARBONITRIDING_HV_SCALE (1.05) × normalized composite. Real carbonitrided steels reach 60-65 HRC (≈ 700-800 HV).
+- Do not assume coreToughnessProxy equals real Charpy impact value; it is a normalized composite. Real carbonitriding core toughness is preserved better than carburizing because milder quench + lower hold T preserve core ferrite-pearlite structure.
+- Do not assume fatigueResistanceProxy equals real S-N endurance limit in MPa; it is a normalized composite. Real fatigue benefit is from compressive residual stress (≈ −200 to −500 MPa) in the case + M(C,N) precipitates.
+- Do not assume distortionProxy equals real dimensional change %; it is DISTORTION_BASELINE + composite contributions. Real carbonitriding dimensional change is 0.05-0.15% — between nitriding (< 0.05%) and carburizing (0.10-0.30%).
+- Do not assume wearResistanceProxy equals ASTM G65 wear-rate; it is a normalized composite of caseHardness + carbonitrideProxy + (1 − networkRisk) + (1 − raProxy × 0.5).
+- Do not assume caseCoreRatio matches real Case_HRC / Core_HRC; real carbonitrided parts typically have case HRC ≈ 62, core HRC ≈ 30 (ratio ≈ 2.1), while the proxy is bounded to [0, 10].
+- Do not assume uniformityIndex is a carbonitriding-quality metric; carbonitriding INTENTIONALLY breaks uniformity (edge-erfc gradient), so high uniformityIndex indicates NOT-carbonitrided.
+- Do not assume INTERMEDIATE_FIELD_MIN=0.40, INTERMEDIATE_FIELD_MAX=0.70, INTERMEDIATE_FIELD_IDEAL=0.55, KCN_MIN=0.50, KCN_MAX=1.10, KCN_IDEAL=0.80, CN_RATIO_MIN=0.45, CN_RATIO_MAX=0.85, CN_RATIO_IDEAL=0.70, SURFACE_MIN_CN=0.65, SURFACE_PLATEAU_THRESHOLD=0.85, SURFACE_SATURATION=1.05, BOOST_TARGET=1.00, DIFFUSE_TARGET=0.85, CORE_BASELINE=0.18, ECD_THRESHOLD=0.40, TCD_THRESHOLD=0.22, CASE_THICKNESS_TARGET=0.24, CASE_BAND_FRAC=0.18, CORE_BAND_FRAC=0.30, NETWORK_SURFACE_FRAC=0.50, NETWORK_MAX=0.45, RA_MAX=0.35, RA_IDEAL=0.18, EDGE_DOMINANCE_MIN=0.55, MONOTONICITY_MIN=0.55, ERFC_FIT_MIN=0.55, ASYMMETRY_MAX=0.35, REVERSE_THRESHOLD=0.10, ALLOY_FACTOR_MIN=0.25, Q_OVER_RT_CN_DIFFUSION=4.1, FDT_REFERENCE_CARBONITRIDING=0.26, CARBONITRIDING_HV_SCALE=1.05, DISTORTION_BASELINE=0.10 are real physical quantities; they are normalized proxy values on the drivingForce / reserve axes.
+- Analysis is snapshot-based; does not capture transformation kinetics directly — dual diffusion, carbonitride precipitation, RA development, and stage assignment are inferred from structural signatures rather than measured Kc/Kn-time-T history.
+
+## On error
+- Log the error payload from JSON output.
+- Do not retry silently.
+- Surface to user: "Carbonitriding analysis failed: [error]" with guidance to check pool ID and API availability.
+
+## On success
+- Report the pool with highest carbonitridingIndex as the one with the cleanest carbonitriding fingerprint (best balance of stage progress, edge-gradient quality, property profile, and process avoidances).
+- Flag pools in NO_CARBONITRIDING_DRIVE regime as no-prior-intermediate-hold — analysis inapplicable.
+- Flag pools in PRE_CARBONITRIDE regime as cold — below process T, no C or N potential.
+- Flag pools in TEMPERATURE_RAMP regime as heating — entering intermediate window.
+- Flag pools in POTENTIAL_ESTABLISHMENT regime as surface-rising — Kc and Kn establishing.
+- Flag pools in DUAL_DIFFUSION regime as both-species-diffusing — inward C and N flux.
+- Flag pools in CARBONITRIDE_PRECIPITATION regime as M(C,N)-nucleating — fine carbonitride precipitates forming.
+- Flag pools in EFFECTIVE_CASE_FORMATION regime as case-on-target — pre-quench condition.
+- Flag pools in QUENCH_READY regime as quench-handoff — proceed to MILD oil/gas quench + low-T temper.
+- Flag pools in OVER_CARBONITRIDED regime as continuous-network — brittle defect.
+- Flag pools in EXCESS_RETAINED_AUSTENITE regime as soft-spots — RA > RA_MAX, dimensional instability.
+- Flag pools in UNDER_CARBONITRIDED regime as case-insufficient — KCN too low or hold too short.
+- Flag pools in UNEVEN_CARBONITRIDING regime as shadowing-defect — atmosphere asymmetry.
+- Flag pools in DECARBURIZATION_LIKE regime as reverse-direction — treatment running backward.
+- Flag pools in OVER_INTERMEDIATE_FIELD regime as wrong-process — T crossed into pure γ; switch to carburizing skill.
+- Flag pools in SUB_INTERMEDIATE_FIELD regime as wrong-process — T below γ; switch to nitriding skill.
+- Flag pools with intermediateFieldOk=0 as out-of-intermediate-field.
+- Flag pools with intermediateFieldProximity > 0.8 as intermediate-ideal.
+- Flag pools with kcnInWindow=1 as KCN-in-window.
+- Flag pools with kcnProximity > 0.8 as KCN-ideal.
+- Flag pools with cnRatioInWindow=1 as C/N-ratio-balanced.
+- Flag pools with cnRatioProximity > 0.8 as C/N-ratio-ideal.
+- Flag pools with surfaceActivity ≥ SURFACE_MIN_CN as surface-established.
+- Flag pools with carbonitrideProxy > 0.5 as M(C,N)-precipitates-developed.
+- Flag pools with raProxy ≤ RA_IDEAL as RA-ideal.
+- Flag pools with raExceedsTarget=1 as RA-too-high (excess-RA defect).
+- Flag pools with networkRisk ≤ NETWORK_MAX as no-network.
+- Flag pools with networkRisk > 0.7 as network-warning (over-CN defect).
+- Flag pools with alloyFormerOk=1 as alloy-formers-sufficient.
+- Flag pools with diffusionZoneProxy > 0.6 as diffusion-zone-developed.
+- Flag pools with edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN as edge-dominant — carbonitriding-like.
+- Flag pools with asymmetryIndex ≤ ASYMMETRY_MAX as symmetric.
+- Flag pools with asymmetryIndex > ASYMMETRY_MAX as asymmetric — shadow warning.
+- Flag pools with gradientMonotonicity ≥ MONOTONICITY_MIN as monotonic.
+- Flag pools with erfcFit ≥ ERFC_FIT_MIN as erfc-fitting.
+- Flag pools with caseDepthProxy > 0.6 as deep-case.
+- Flag pools with caseThicknessMeetsTarget=1 as ECD-met.
+- Flag pools with underCarbonitrideRisk > 0.6 as under-carbonitrided-warning.
+- Flag pools with unevenCarbonitridingRisk > 0.6 as uneven-warning.
+- Flag pools with reverseGradientRisk > 0.6 as reverse-gradient-warning.
+- Flag pools with caseHardnessProxy > 0.6 as hard-case-analog (typically 60-65 HRC).
+- Flag pools with coreToughnessProxy > 0.6 as tough-core-analog (preserved better than carburizing — milder quench).
+- Flag pools with wearResistanceProxy > 0.6 as wear-resistant-analog.
+- Flag pools with fatigueResistanceProxy > 0.6 as fatigue-resistant-analog.
+- Flag pools with distortionProxy < 0.20 as low-distortion-analog (carbonitriding signature — milder than carburizing).
+- Flag pools with caseCoreRatio in [0.8, 1.5] as balanced-case-core.
+- Report the inferred regime and verdict.
+- Show bins with stageBin = 1 as ramp positions.
+- Show bins with stageBin = 2 as potential-establishment positions.
+- Show bins with stageBin = 3 as dual-diffusion positions.
+- Show bins with stageBin = 4 as carbonitride-precipitation positions.
+- Show bins with stageBin = 5 as effective-case-formation positions.
+- Show bins with stageBin = 6 as quench-ready positions.
+- Show bins with stageBin = 7 as over-carbonitrided positions (warning).
+- Show bins with inEdgeLayer = 1 as edge-layer / case positions.
+- Show bins with inDiffusionZone = 1 as diffusion-zone positions (= edge layer for carbonitriding).
+- Show bins with inCoreBand = 1 as core positions.
+- Show bins with highest edgeLayerSignal as best edge-layer positions.
+- Show bins with highest diffusionZoneSignal as best diffusion-zone positions.
+- Show bins with highest carbonitrideSignal as best M(C,N) precipitate positions.
+- Show bins with highest gradientSignal as best gradient-aligned positions.
+- Show bins with raSignal > 0.5 as RA-warning positions.
+- Show bins with networkSignal > 0.5 as network-warning positions.
+- Show bins with reverseSignal = 1 as reverse-gradient-warning positions.
+- Show bins with unevenSignal > 0.5 as asymmetry-warning positions.
+- Show bins with highest carbonitridingDegree as overall most-carbonitrided positions.
+- For LP agents: in PRE_CARBONITRIDE pools, use uniform-exposure strategies (no diffusion yet); in TEMPERATURE_RAMP and POTENTIAL_ESTABLISHMENT pools, expect early edge enrichment — rebalancing toward edges may be premature; in DUAL_DIFFUSION and CARBONITRIDE_PRECIPITATION pools, expect growing edge dominance with monotonic gradient — edge-heavy range strategies align; in EFFECTIVE_CASE_FORMATION and QUENCH_READY pools, the case is fully developed and the gradient is locked in — concentrated range plays where the edge erfc profile dominates outperform uniform strategies, BUT remember the post-treatment quench is required for the real-world analog (the LP equivalent is a confirmation step before locking in the position); in OVER_CARBONITRIDED and EXCESS_RETAINED_AUSTENITE pools, treat as defects and reallocate; in UNDER_CARBONITRIDED pools, expect insufficient case — wait for further development; in UNEVEN_CARBONITRIDING pools, consider hedging the weaker-edge side; in DECARBURIZATION_LIKE pools, the profile has reversed — treat opposite direction signals; in OVER_INTERMEDIATE_FIELD pools, switch to carburizing skill (the pool is in the pure γ-field band); in SUB_INTERMEDIATE_FIELD pools, switch to nitriding skill (the pool is in the α-field band).
+- For trading agents: CARBONITRIDE_PRECIPITATION, EFFECTIVE_CASE_FORMATION, and QUENCH_READY pools have edge-dominant erfc structure — slippage through the center is much higher than through the outermost bins. The gradient is structurally similar to carburizing's but at LOWER drivingForce (intermediate field) and with measurable RA proxy (within-edge variance higher). Route sizing should respect both the edge concentration AND the intermediate-band positioning. UNIFORM / uniformityIndex-high pools are NOT carbonitriding-like and should be analyzed with the four bulk skills (normalization, austempering, martempering, patenting).
+- Compare carbonitriding indices and edge-gradient quality across pools to find bins and pools with the strongest carbonitriding signature for the intended LP or trading strategy.
+- When QUENCH_READY, the pool profile is suitable for HANDOFF TO MILD OIL/GAS QUENCH + LOW-T TEMPER analog — distinct from FULLY_NITRIDED (SERVICE_READY, no quench) and FULLY_CARBURIZED (QUENCH_READY but full oil quench). Passing the pool ID and carbonitriding profile to subsequent quench-and-temper-loading skills is the intended handoff.
