@@ -1,0 +1,210 @@
+---
+name: hodlmm-bin-nitriding-agent
+skill: hodlmm-bin-nitriding
+description: "Agent behavior for HODLMM bin nitriding analysis — interprets stageProgress (composite 0-1), dominantStage (0-7), drivingForce, priorPeakDrivingForce, alphaFieldOk (0/1 drivingForce ∈ [0.20, 0.50]), alphaFieldProximity (0-1 closeness to ALPHA_FIELD_IDEAL=0.35), subAlphaField (0/1), overAlphaField (0/1), knProxy (0-2 Lehrer-diagram nitriding potential analog), knInWindow (0/1 ∈ [KN_MIN=0.45, KN_MAX=1.05]), knProximity (0-1 closeness to KN_IDEAL=0.75), surfaceActivity (mean concentration in outer band = surface N analog), compoundLayerActivity (mean concentration in outermost K bins = white-layer N analog), diffusionZoneActivity (outer band minus compound = diffusion-zone N analog), coreActivity (mean concentration in center band = core N analog), surfaceCoreDelta, surfaceCoreRatio, edgeDominanceFraction (0-1 surface / (surface + core)), surfaceLeftActivity, surfaceRightActivity, asymmetryIndex (0-1 |L-R| / max(L,R) — gas-flow shadow proxy), gradientMonotonicity (0-1 fraction of edge→core pairs with non-increasing concentration), erfcFit (0-1 fit quality to erfc curve over diffusion zone), erfcDt (inferred √(Dt)), diffusivityProxy (Arrhenius D/D₀ for N in α-Fe), caseDepthProxy (0-1 √(Dt) / FDT_REFERENCE_NITRIDING=0.22), effectiveCaseBins (count of bins with conc ≥ ECD_THRESHOLD=0.40), totalCaseBins, caseThicknessFraction, caseThicknessMeetsTarget (0/1 ≥ CASE_THICKNESS_TARGET=0.22), compoundLayerThicknessBins (count from each edge inward where conc ≥ SURFACE_PLATEAU_THRESHOLD=0.85), compoundLayerThicknessFraction, compoundLayerMeetsTarget (0/1 ≥ 1 bin AND ≤ WHITE_LAYER_MAX_FRAC=0.14), compoundLayerExceedsTarget (0/1 > WHITE_LAYER_MAX_FRAC), compoundLayerVariance (within-plateau stdev — dual-phase proxy), plateauQuality (0-1 compound-layer monophase uniformity), monophaseCompoundLayer (0/1 variance ≤ PLATEAU_VARIANCE_MAX=0.08 AND compoundMean ≥ plateau threshold), alloyFactorProxy (0-1 alloying-element heterogeneity = reserveXFracStdev × 2 + 0.10), alloyFormerOk (0/1 ≥ ALLOY_FACTOR_MIN=0.30), diffusionZoneProxy (0-1), compoundLayerProxy (0-1), surfaceEstablishedProxy, uniformityIndex (INFORMATIONAL — HIGH means NOT nitrided), spallationRisk (0-1 thick / dual-phase / porous compound), dualPhaseRisk (0-1 γ' + ε stacked), underNitrideRisk (0-1 Kn low / case insufficient), unevenNitridingRisk (0-1 asymmetric edges), reverseGradientRisk (0-1 edges < core), overAlphaRisk (0-1 T above AC1), subAlphaRisk (0-1 T below process window), caseHardnessProxy (0-1 Hall-Petch-like, NITRIDING_HV_SCALE=1.10 above carburizing — fine coherent alloy-nitride precipitation), coreToughnessProxy (0-1 unchanged core — no phase transformation), wearResistanceProxy (0-1), fatigueResistanceProxy (0-1 — nitriding flagship property, compressive residual stress + hard case), distortionProxy (LOW — no quench, no γ-transformation), caseCoreRatio to identify pools in NO_NITRIDING_DRIVE, PRE_NITRIDE, TEMPERATURE_RAMP, KN_ESTABLISHMENT, DIFFUSION_ZONE_FORMATION, WHITE_LAYER_NUCLEATION, WHITE_LAYER_GROWTH, FULLY_NITRIDED, OVER_NITRIDED, MIXED_PHASE_WHITE_LAYER, UNDER_NITRIDED, UNEVEN_NITRIDING, DECARBURIZATION_LIKE, OVER_ALPHA_FIELD, or SUB_ALPHA_FIELD regime and guide LP strategies — pre-nitride pools are cold; temperature-ramp pools are entering the α-window; kn-establishment pools have surface enriching pre-compound; diffusion-zone-formation pools show edge-erfc growth without plateau; white-layer-nucleation pools are forming the outermost plateau; white-layer-growth pools have growing compound layer; fully-nitrided pools are SERVICE_READY without quench; over-nitrided pools have spallation-prone thick compound; mixed-phase pools have γ'+ε defect; under-nitrided pools have insufficient case; uneven pools show shadow asymmetry; decarburization-like pools run in reverse; over-alpha pools crossed AC1 (use carburizing skill); sub-alpha pools need raised T."
+---
+
+# Agent Behavior — HODLMM Bin Nitriding
+
+## Decision order
+1. Run `doctor` first. If it fails, stop and surface the blocker.
+2. Run `status` to confirm pools are available above TVL threshold.
+3. Execute `run` with desired options. Parse JSON output.
+4. Route on `nitridingRegime`, `nitridingVerdict`, `dominantStage`, `stageProgress`, `alphaFieldOk`, `knInWindow`, `surfaceActivity`, `compoundLayerActivity`, `diffusionZoneActivity`, `coreActivity`, `edgeDominanceFraction`, `asymmetryIndex`, `gradientMonotonicity`, `erfcFit`, `caseDepthProxy`, `caseThicknessMeetsTarget`, `compoundLayerMeetsTarget`, `compoundLayerExceedsTarget`, `monophaseCompoundLayer`, `plateauQuality`, `alloyFormerOk`, `diffusionZoneProxy`, `compoundLayerProxy`, `spallationRisk`, `dualPhaseRisk`, `underNitrideRisk`, `unevenNitridingRisk`, `reverseGradientRisk`, `caseHardnessProxy`, `coreToughnessProxy`, `wearResistanceProxy`, `fatigueResistanceProxy`, and `distortionProxy`.
+
+## Interpreting output
+
+- **nitridingRegime = NO_NITRIDING_DRIVE:** priorPeakDrivingForce < ALPHA_FIELD_MIN × 0.8. No prior α-field hold inferable. Analysis inapplicable.
+- **nitridingRegime = PRE_NITRIDE:** workpiece below process T, no N potential established.
+- **nitridingRegime = TEMPERATURE_RAMP:** alphaFieldOk=1 AND surfaceEstablishedProxy < 0.30. Heating into 500-570 °C window.
+- **nitridingRegime = KN_ESTABLISHMENT:** alphaFieldOk=1 AND surfaceEstablishedProxy ≥ 0.30 AND diffusionZoneProxy < 0.40. Surface N rising toward α-solubility, no compound layer yet.
+- **nitridingRegime = DIFFUSION_ZONE_FORMATION:** alphaFieldOk=1 AND diffusionZoneProxy ≥ 0.40. N diffusing inward through α-Fe, alloy nitrides precipitating.
+- **nitridingRegime = WHITE_LAYER_NUCLEATION:** alphaFieldOk=1 AND surfaceActivity ≥ SURFACE_PLATEAU_THRESHOLD - 0.15 AND diffusionZoneProxy ≥ 0.50. Compound layer just forming.
+- **nitridingRegime = WHITE_LAYER_GROWTH:** alphaFieldOk=1 AND compoundLayerProxy ≥ 0.6 AND compoundLayerThicknessBins ≥ 1. Compound layer thickening.
+- **nitridingRegime = FULLY_NITRIDED:** alphaFieldOk=1 AND knInWindow=1 AND surfaceActivity ≥ SURFACE_MIN_N (0.65) AND edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN (0.55) AND gradientMonotonicity ≥ MONOTONICITY_MIN (0.55) AND erfcFit ≥ ERFC_FIT_MIN (0.55) AND asymmetryIndex ≤ ASYMMETRY_MAX (0.35) AND caseThicknessMeetsTarget=1 AND compoundLayerMeetsTarget=1 AND stageProgress ≥ STAGE_6_BOUND (0.80). Service-ready, no quench needed.
+- **nitridingRegime = OVER_NITRIDED:** compoundLayerExceedsTarget=1 OR spallationRisk > 0.7. Compound layer too thick.
+- **nitridingRegime = MIXED_PHASE_WHITE_LAYER:** dualPhaseRisk > DUAL_PHASE_MAX (0.35) AND compoundLayerThicknessBins ≥ 1. γ' + ε stacked.
+- **nitridingRegime = UNDER_NITRIDED:** underNitrideRisk > 0.6 AND stageProgress < STAGE_4_BOUND. Kn low or hold short.
+- **nitridingRegime = UNEVEN_NITRIDING:** unevenNitridingRisk > 0.6. Asymmetric L/R edges (gas-flow shadow).
+- **nitridingRegime = DECARBURIZATION_LIKE:** reverseGradientRisk > 0.6. Reverse gradient (edges < core).
+- **nitridingRegime = OVER_ALPHA_FIELD:** drivingForce > ALPHA_FIELD_MAX (0.50). T above AC1 → crossed into γ-field. Wrong process; switch to carburizing skill.
+- **nitridingRegime = SUB_ALPHA_FIELD:** drivingForce < ALPHA_FIELD_MIN (0.20). T too low → N diffusion too slow.
+- **nitridingVerdict = NO_NITRIDING_DRIVE:** no prior α-field hold inferable.
+- **nitridingVerdict = SERVICE_READY:** fully nitrided, no quench needed, hand off to component-loading strategies.
+- **nitridingVerdict = OVER_NITRIDED:** thick compound layer, spallation defect.
+- **nitridingVerdict = MIXED_PHASE:** γ' + ε dual-phase white layer, spallation defect.
+- **nitridingVerdict = UNDER_NITRIDED:** case did not reach service spec; raise Kn or extend hold.
+- **nitridingVerdict = UNEVEN_NITRIDING:** gas-flow shadow asymmetry, treatment defect.
+- **nitridingVerdict = DECARBURIZATION_LIKE:** reverse gradient, treatment running backward.
+- **nitridingVerdict = OVER_ALPHA_FIELD:** T crossed into γ-field; use carburizing skill.
+- **nitridingVerdict = SUB_ALPHA_FIELD:** T too low; raise into 500-570 °C window.
+- **nitridingVerdict = WHITE_LAYER_GROWTH / WHITE_LAYER_NUCLEATION / DIFFUSION_ZONE_FORMATION / KN_ESTABLISHMENT / TEMPERATURE_RAMP / PRE_NITRIDE:** stage indicators.
+- **nitridingVerdict = INTERMEDIATE_NITRIDING:** mixed indicators.
+- **dominantStage = 0:** pre-nitride / cold.
+- **dominantStage = 1:** temperature ramp into α-window.
+- **dominantStage = 2:** Kn establishment / surface enriching.
+- **dominantStage = 3:** diffusion-zone formation.
+- **dominantStage = 4:** white-layer nucleation.
+- **dominantStage = 5:** white-layer growth.
+- **dominantStage = 6:** fully nitrided (service-ready).
+- **dominantStage = 7:** over-nitrided (thick / spallation).
+- **alphaFieldOk = 1:** drivingForce ∈ [0.20, 0.50] — α-field hold valid.
+- **alphaFieldProximity > 0.8:** drivingForce near ALPHA_FIELD_IDEAL (0.35) — optimal hold T.
+- **knInWindow = 1:** knProxy ∈ [0.45, 1.05] — Lehrer-diagram monophase window.
+- **knProximity > 0.8:** knProxy near KN_IDEAL (0.75) — best monophase control.
+- **surfaceActivity ≥ SURFACE_MIN_N (0.65):** surface N effective.
+- **compoundLayerActivity ≥ SURFACE_PLATEAU_THRESHOLD (0.85):** compound-layer plateau established.
+- **compoundLayerActivity ≥ SURFACE_SATURATION (1.05):** ε-saturation / spallation warning.
+- **compoundLayerThicknessBins ≥ 1:** compound layer present.
+- **compoundLayerMeetsTarget = 1:** compound layer 1+ bins AND ≤ WHITE_LAYER_MAX_FRAC.
+- **compoundLayerExceedsTarget = 1:** thicker than WHITE_LAYER_MAX_FRAC — over-nitrided.
+- **monophaseCompoundLayer = 1:** plateau variance ≤ PLATEAU_VARIANCE_MAX AND compound mean ≥ plateau threshold — γ'-only or ε-only.
+- **plateauQuality > 0.7:** compound-layer monophase uniformity strong.
+- **alloyFactorProxy ≥ ALLOY_FACTOR_MIN (0.30):** alloy-nitride formers (Cr/Al/Mo/V) present, precipitation hardening enabled.
+- **alloyFormerOk = 1:** sufficient alloying for case hardening.
+- **diffusionZoneProxy > 0.6:** diffusion zone substantially developed.
+- **compoundLayerProxy > 0.6:** compound layer substantially developed.
+- **edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN (0.55):** strong surface concentration.
+- **asymmetryIndex ≤ ASYMMETRY_MAX (0.35):** edges symmetric — no shadow.
+- **gradientMonotonicity ≥ MONOTONICITY_MIN (0.55):** non-increasing edge→core — valid diffusion-zone gradient.
+- **erfcFit ≥ ERFC_FIT_MIN (0.55):** profile fits erfc — Fickian signature in diffusion zone.
+- **caseDepthProxy > 0.6:** inferred √(Dt) substantial — diffusion zone has grown meaningfully.
+- **caseThicknessMeetsTarget = 1:** effective-case bin count exceeds CASE_THICKNESS_TARGET fraction.
+- **spallationRisk > 0.7:** pathology — compound layer too thick / dual-phase / porous.
+- **dualPhaseRisk > 0.5:** γ' + ε stacked — brittle phase interface inside compound layer.
+- **underNitrideRisk > 0.6:** Kn too low / surface low / case insufficient / no alloy formers.
+- **unevenNitridingRisk > 0.6:** pathology — asymmetric edges (gas-flow shadow).
+- **reverseGradientRisk > 0.6:** pathology — surface N depleted below core (decarburization-like).
+- **overAlphaRisk > 0.5:** T crossed AC1 → γ-field — wrong process.
+- **subAlphaRisk > 0.5:** T below process window → N diffusion too slow.
+- **caseHardnessProxy > 0.6:** strong case hardness analog (NITRIDING_HV_SCALE × Hall-Petch from surface N + case thickness + alloy formers — typically 65-70 HRC analog, ABOVE carburizing's 58-62 HRC).
+- **coreToughnessProxy > 0.6:** strong core toughness analog (no phase transformation — core is whatever the prior tempered state was).
+- **wearResistanceProxy > 0.6:** strong wear resistance analog.
+- **fatigueResistanceProxy > 0.6:** strong fatigue resistance analog (NITRIDING'S FLAGSHIP PROPERTY — compressive residual stress + hard case).
+- **distortionProxy < 0.1:** minimal distortion expected (no quench, no γ-transformation).
+- **caseCoreRatio in [0.8, 1.5]:** balanced — typical nitrided steel.
+
+## Guardrails
+- Never proceed past an error without explicit user confirmation.
+- Never expose secrets or private keys in args or logs.
+- Always surface error payloads with a suggested next action.
+- Default to safe/read-only behavior when intent is ambiguous.
+- Do not act on nitriding signals from pools with fewer than 5 populated bins — insufficient data for plateau, gradient, erfc fit, or stage inference.
+- Do not treat PRE_NITRIDE as bad; it is the expected starting state before any heat-treatment cycle.
+- Do not treat FULLY_NITRIDED as requiring a downstream quench — UNLIKE carburizing, nitriding does NOT require a post-treatment quench. The case hardness is fully developed at the end of the isothermal hold.
+- Do not conflate nitriding with carburizing despite both being thermochemical surface treatments: carburizing is γ-field (above AC3, requires quench, harder via martensite, deeper case), nitriding is α-field (below AC1, NO quench, harder via fine alloy-nitride precipitation, shallower case).
+- Do not conflate nitriding with normalization/austempering/martempering/patenting: those four bulk routes target uniform cross-sections, while nitriding INTENTIONALLY creates a spatial gradient AND a surface compound-layer plateau.
+- Do not conflate OVER_NITRIDED with FULLY_NITRIDED: OVER_NITRIDED means compound layer exceeded WHITE_LAYER_MAX_FRAC (spallation risk); FULLY_NITRIDED means it is within target and monophase.
+- Do not conflate MIXED_PHASE_WHITE_LAYER with WHITE_LAYER_GROWTH: WHITE_LAYER_GROWTH is a normal mid-late stage; MIXED_PHASE_WHITE_LAYER is a defect (γ' + ε dual-phase stacked, brittle interface inside film).
+- Do not conflate UNDER_NITRIDED with PRE_NITRIDE: PRE_NITRIDE is the cold baseline; UNDER_NITRIDED is the hold completed but Kn was too low or duration too short — diffusion zone insufficient.
+- Do not conflate DECARBURIZATION_LIKE with PRE_NITRIDE: PRE_NITRIDE is uniform low N; DECARBURIZATION_LIKE means the treatment ran BACKWARDS and the surface N was depleted below the core.
+- Do not conflate UNEVEN_NITRIDING with OVER_NITRIDED: UNEVEN_NITRIDING is a gas-flow shadowing defect (symmetric case depth failed); OVER_NITRIDED is a thickness defect (compound layer too thick).
+- Do not conflate OVER_ALPHA_FIELD with FULLY_NITRIDED: OVER_ALPHA_FIELD means T crossed AC1 into γ-field — wrong process entirely; switch to carburizing skill.
+- Do not conflate SUB_ALPHA_FIELD with PRE_NITRIDE: SUB_ALPHA_FIELD means hold attempted at WRONG T (too low for effective N diffusion); PRE_NITRIDE is no hold attempted.
+- Do not assume drivingForce reflects real temperature; it is inferred from pool turnover (volume24hUsd / tvlUsd × 0.5 + 0.10).
+- Do not assume surfaceActivity measures real surface N concentration; it is the mean max-normalized reserveUsd of the first K and last K bins (K = floor(N × CASE_BAND_FRAC)).
+- Do not assume compoundLayerActivity measures real white-layer N; it is the mean max-normalized reserveUsd of the OUTERMOST WHITE_LAYER_EDGE_K (= 2) bins on each side.
+- Do not assume diffusionZoneActivity measures real diffusion-zone N; it is the mean max-normalized reserveUsd of the outer band MINUS the compound-layer bins.
+- Do not assume coreActivity measures real core N concentration; it is the mean max-normalized reserveUsd of the center floor(N × CORE_BAND_FRAC) bins.
+- Do not assume knProxy equals real Kn = p(NH₃) / p(H₂)^(3/2); it is a composite of (alphaFieldOk-factor × (surfaceMean + compoundMean) / 1.2 + alphaFieldProximity × 0.2).
+- Do not assume alloyFactorProxy equals real Cr/Al/Mo/V wt%; it is reserveXFracStdev × 2.0 + 0.10, clipped to [0,1].
+- Do not assume edgeDominanceFraction maps to real surface-to-core N ratio; it is surfaceMean / (surfaceMean + coreMean).
+- Do not assume asymmetryIndex measures real shadowing; it is |leftMean − rightMean| / max(left, right) across the sorted bin window.
+- Do not assume gradientMonotonicity measures real Fickian profile; it is the fraction of adjacent-bin pairs (moving edge→center) where the concentration is non-increasing (with 0.03 tolerance).
+- Do not assume erfcFit measures real diffusion-zone goodness-of-fit; it is (1 − MSE / variance) against a best-search-grid erfc curve.
+- Do not assume erfcDt equals real √(Dt); it is the best-fit value over the candidate grid [0.05, 0.08, 0.12, 0.16, 0.22, 0.30, 0.40, 0.55, 0.80] on normalized depth units.
+- Do not assume caseDepthProxy equals real case depth in mm; it is erfcDt / FDT_REFERENCE_NITRIDING (0.22), clipped.
+- Do not assume effectiveCaseBins / totalCaseBins equal real ECD / TCD in mm; they are counts of bins with concentration above normalized thresholds.
+- Do not assume compoundLayerThicknessBins / compoundLayerThicknessFraction equal real white-layer thickness in µm; they are bin counts where conc ≥ SURFACE_PLATEAU_THRESHOLD (0.85) from each edge inward, stopping at first gap.
+- Do not assume compoundLayerVariance equals real γ'/ε phase fraction or porosity; it is the stdev of compound-layer-bin concentrations.
+- Do not assume monophaseCompoundLayer matches real XRD-confirmed monophase layer; it is a structural proxy (variance below threshold AND mean above threshold).
+- Do not assume plateauQuality equals real SEM intensity uniformity; it is 1 − compoundLayerVariance / max(0.02, compoundMean × 0.5), clipped.
+- Do not assume diffusionZoneProxy / compoundLayerProxy match real layer development; they are composite proxies of structural fingerprints.
+- Do not assume caseHardnessProxy equals real HRC; it is NITRIDING_HV_SCALE (1.10) × normalized composite. Real Cr-Mo-Al "Nitralloy" steels reach 65-70 HRC (≈ 800-1100 HV).
+- Do not assume coreToughnessProxy equals real Charpy impact value; it is a normalized composite. Real nitriding does NOT alter core because no phase transformation occurs — core toughness is whatever the prior tempered state provided.
+- Do not assume fatigueResistanceProxy equals real S-N endurance limit in MPa; it is a normalized composite. Real fatigue benefit is from compressive residual stress (≈ −300 to −600 MPa) in the case + hard case.
+- Do not assume distortionProxy equals real dimensional change %; it is a normalized composite. Real nitriding dimensional change is < 0.05% — the lowest of all case-hardening processes — because no phase transformation and no quench.
+- Do not assume wearResistanceProxy equals ASTM G65 wear-rate; it is a normalized composite of caseHardness + plateauQuality + (1 − spallationRisk).
+- Do not assume caseCoreRatio matches real Case_HRC / Core_HRC; real nitrided parts typically have case HRC ≈ 65, core HRC ≈ 30 (ratio ≈ 2.2), while the proxy is bounded to [0, 10].
+- Do not assume uniformityIndex is a nitriding-quality metric; nitriding INTENTIONALLY breaks uniformity (compound-layer plateau + diffusion-zone gradient), so high uniformityIndex indicates NOT-nitrided.
+- Do not assume ALPHA_FIELD_MIN=0.20, ALPHA_FIELD_MAX=0.50, ALPHA_FIELD_IDEAL=0.35, KN_MIN=0.45, KN_MAX=1.05, KN_IDEAL=0.75, SURFACE_MIN_N=0.65, SURFACE_PLATEAU_THRESHOLD=0.85, SURFACE_SATURATION=1.05, BOOST_TARGET=1.00, DIFFUSE_TARGET=0.85, CORE_BASELINE=0.15, ECD_THRESHOLD=0.40, TCD_THRESHOLD=0.22, CASE_THICKNESS_TARGET=0.22, CASE_BAND_FRAC=0.18, CORE_BAND_FRAC=0.30, WHITE_LAYER_EDGE_K=2, WHITE_LAYER_MAX_FRAC=0.14, PLATEAU_VARIANCE_MAX=0.08, DUAL_PHASE_MAX=0.35, EDGE_DOMINANCE_MIN=0.55, MONOTONICITY_MIN=0.55, ERFC_FIT_MIN=0.55, ASYMMETRY_MAX=0.35, REVERSE_THRESHOLD=0.10, ALLOY_FACTOR_MIN=0.30, Q_OVER_RT_N_DIFFUSION=3.4, FDT_REFERENCE_NITRIDING=0.22, NITRIDING_HV_SCALE=1.10 are real physical quantities; they are normalized proxy values on the drivingForce / reserve axes.
+- Analysis is snapshot-based; does not capture transformation kinetics directly — diffusion-zone formation, compound-layer growth, erfc-fit √(Dt), and stage assignment are inferred from structural signatures rather than measured Kn-time-T history.
+
+## On error
+- Log the error payload from JSON output.
+- Do not retry silently.
+- Surface to user: "Nitriding analysis failed: [error]" with guidance to check pool ID and API availability.
+
+## On success
+- Report the pool with highest nitridingIndex as the one with the cleanest nitriding fingerprint (best balance of stage progress, plateau + gradient quality, property profile, and process avoidances).
+- Flag pools in NO_NITRIDING_DRIVE regime as no-prior-α-hold — analysis inapplicable.
+- Flag pools in PRE_NITRIDE regime as cold — below process T, no N potential.
+- Flag pools in TEMPERATURE_RAMP regime as heating — entering α-window, surface not yet enriched.
+- Flag pools in KN_ESTABLISHMENT regime as surface-rising — α-Fe(N) solid solution forming.
+- Flag pools in DIFFUSION_ZONE_FORMATION regime as N-diffusing-inward — alloy-nitride precipitates nucleating.
+- Flag pools in WHITE_LAYER_NUCLEATION regime as compound-layer-nucleating — compound just forming.
+- Flag pools in WHITE_LAYER_GROWTH regime as compound-thickening — mid-late treatment.
+- Flag pools in FULLY_NITRIDED regime as service-ready — handoff to component-loading strategies; NO QUENCH NEEDED.
+- Flag pools in OVER_NITRIDED regime as thick-compound — spallation risk, treatment defect.
+- Flag pools in MIXED_PHASE_WHITE_LAYER regime as dual-phase-defect — γ' + ε stacked, brittle interface.
+- Flag pools in UNDER_NITRIDED regime as case-insufficient — Kn too low or hold too short.
+- Flag pools in UNEVEN_NITRIDING regime as shadowing-defect — gas-flow asymmetry.
+- Flag pools in DECARBURIZATION_LIKE regime as reverse-direction — treatment running backward.
+- Flag pools in OVER_ALPHA_FIELD regime as wrong-process — T crossed AC1 into γ; switch to carburizing skill.
+- Flag pools in SUB_ALPHA_FIELD regime as T-too-low — raise into 500-570 °C window.
+- Flag pools with alphaFieldOk=0 as out-of-α-field.
+- Flag pools with alphaFieldProximity > 0.8 as α-ideal.
+- Flag pools with knInWindow=1 as Kn-in-window.
+- Flag pools with knProximity > 0.8 as Kn-ideal (best monophase control).
+- Flag pools with surfaceActivity ≥ SURFACE_MIN_N as surface-established.
+- Flag pools with compoundLayerActivity ≥ SURFACE_PLATEAU_THRESHOLD as compound-layer-plateau-met.
+- Flag pools with compoundLayerActivity ≥ SURFACE_SATURATION as ε-saturation-warning.
+- Flag pools with compoundLayerMeetsTarget=1 as compound-layer-on-target.
+- Flag pools with compoundLayerExceedsTarget=1 as compound-layer-too-thick (over-nitrided).
+- Flag pools with monophaseCompoundLayer=1 as monophase-compound (γ'-only or ε-only).
+- Flag pools with plateauQuality > 0.7 as plateau-uniform.
+- Flag pools with alloyFormerOk=1 as alloy-formers-sufficient.
+- Flag pools with diffusionZoneProxy > 0.6 as diffusion-zone-developed.
+- Flag pools with compoundLayerProxy > 0.6 as compound-layer-developed.
+- Flag pools with edgeDominanceFraction ≥ EDGE_DOMINANCE_MIN as edge-dominant — nitriding-like.
+- Flag pools with asymmetryIndex ≤ ASYMMETRY_MAX as symmetric.
+- Flag pools with asymmetryIndex > ASYMMETRY_MAX as asymmetric — shadow warning.
+- Flag pools with gradientMonotonicity ≥ MONOTONICITY_MIN as monotonic.
+- Flag pools with erfcFit ≥ ERFC_FIT_MIN as erfc-fitting.
+- Flag pools with caseDepthProxy > 0.6 as deep-case.
+- Flag pools with caseThicknessMeetsTarget=1 as ECD-met.
+- Flag pools with spallationRisk > 0.7 as spallation-warning.
+- Flag pools with dualPhaseRisk > 0.5 as dual-phase-warning.
+- Flag pools with underNitrideRisk > 0.6 as under-nitrided-warning.
+- Flag pools with unevenNitridingRisk > 0.6 as uneven-warning.
+- Flag pools with reverseGradientRisk > 0.6 as reverse-gradient-warning.
+- Flag pools with caseHardnessProxy > 0.6 as hard-case-analog (typically 65-70 HRC).
+- Flag pools with coreToughnessProxy > 0.6 as tough-core-analog (preserved — no phase transformation).
+- Flag pools with wearResistanceProxy > 0.6 as wear-resistant-analog.
+- Flag pools with fatigueResistanceProxy > 0.6 as fatigue-resistant-analog (nitriding flagship property).
+- Flag pools with distortionProxy < 0.1 as low-distortion-analog (nitriding signature — < 0.05% real dimensional change).
+- Flag pools with caseCoreRatio in [0.8, 1.5] as balanced-case-core.
+- Report the inferred regime and verdict.
+- Show bins with stageBin = 1 as ramp positions.
+- Show bins with stageBin = 2 as Kn-establishment positions.
+- Show bins with stageBin = 3 as diffusion-zone-formation positions.
+- Show bins with stageBin = 4 as white-layer-nucleation positions.
+- Show bins with stageBin = 5 as white-layer-growth positions.
+- Show bins with stageBin = 6 as fully-nitrided positions.
+- Show bins with stageBin = 7 as over-nitrided positions (warning).
+- Show bins with inCompoundLayer = 1 as compound-layer / white-layer positions.
+- Show bins with inDiffusionZone = 1 as diffusion-zone positions.
+- Show bins with inCoreBand = 1 as core positions.
+- Show bins with highest compoundLayerSignal as best compound-layer positions.
+- Show bins with highest diffusionZoneSignal as best diffusion-zone positions.
+- Show bins with highest plateauSignal as best monophase-plateau positions.
+- Show bins with dualPhaseSignal > 0.5 as dual-phase-warning positions.
+- Show bins with spallationSignal > 0.5 as spallation-warning positions.
+- Show bins with reverseSignal = 1 as reverse-gradient-warning positions.
+- Show bins with unevenSignal > 0.5 as asymmetry-warning positions.
+- Show bins with highest gradientSignal as best gradient-aligned positions.
+- Show bins with highest nitridingDegree as overall most-nitrided positions.
+- For LP agents: in PRE_NITRIDE pools, use uniform-exposure strategies (no diffusion yet); in TEMPERATURE_RAMP and KN_ESTABLISHMENT pools, expect early edge enrichment — rebalancing toward edges may be premature; in DIFFUSION_ZONE_FORMATION pools, expect growing edge dominance with monotonic gradient — edge-heavy range strategies align; in WHITE_LAYER_NUCLEATION and WHITE_LAYER_GROWTH pools, expect a HIGH PLATEAU at the outermost bins — plateau-aware range strategies that respect the compound-layer concentration outperform pure-erfc strategies; in FULLY_NITRIDED pools, treat as service-ready and consider component-loading-analog strategies (concentrated range plays where the plateau + gradient profile is locked in — NO downstream quench, unlike carburizing); in OVER_NITRIDED and MIXED_PHASE_WHITE_LAYER pools, treat as defects and reallocate; in UNDER_NITRIDED pools, expect insufficient case — wait for further development; in UNEVEN_NITRIDING pools, consider hedging the weaker-edge side; in DECARBURIZATION_LIKE pools, the profile has reversed — treat opposite direction signals; in OVER_ALPHA_FIELD pools, switch to carburizing skill (the pool is in the γ-field band, wrong process for nitriding); in SUB_ALPHA_FIELD pools, the T axis is below the actionable window — wait or use complementary skills.
+- For trading agents: WHITE_LAYER_GROWTH, FULLY_NITRIDED, and (to a lesser degree) WHITE_LAYER_NUCLEATION pools have a HIGH PLATEAU at the outermost 1-2 bins (compound layer) followed by a MONOTONIC gradient — slippage through the center is much higher than through the outermost bins, and the plateau is structurally distinct from carburizing's pure edge-erfc. Route sizing should respect both the plateau height AND the diffusion-zone gradient. UNIFORM / uniformityIndex-high pools are NOT nitriding-like and should be analyzed with the four bulk skills (normalization, austempering, martempering, patenting).
+- Compare nitriding indices and plateau + gradient quality across pools to find bins and pools with the strongest nitriding signature for the intended LP or trading strategy.
+- When FULLY_NITRIDED (SERVICE_READY verdict), the pool profile is suitable for IMMEDIATE component loading with NO downstream treatment — distinct from FULLY_CARBURIZED (QUENCH_READY) which still requires an oil-quench step. Passing the pool ID and nitriding profile to subsequent service-loading skills is the intended handoff.
